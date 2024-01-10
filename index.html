@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FaceMesh Tracking</title>
+  <style>
+    #video {
+      width: 100%;
+      max-width: 640px;
+      margin: 20px auto;
+      display: block;
+    }
+
+    #canvas {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <video id="video" playsinline></video>
+  <canvas id="canvas"></canvas>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/facemesh"></script>
+  <script>
+    // Load FaceMesh model from a different URL
+    async function loadFaceMeshModel() {
+      const model = await tf.loadGraphModel('https://tfhub.dev/tensorflow/tfjs-model/facemesh/1/default/1');
+      return model;
+    }
+
+    // Start video stream and track face
+    async function startVideo() {
+      const video = document.getElementById('video');
+      const canvas = document.getElementById('canvas');
+      const context = canvas.getContext('2d');
+
+      try {
+        // Get video stream from user's webcam
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+
+        // Wait for video to load metadata
+        await video.play();
+
+        // Set canvas dimensions to match video
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        // Load FaceMesh model
+        const faceMeshModel = await loadFaceMeshModel();
+
+        // Detect faces and draw mesh on each frame
+        setInterval(async () => {
+          const predictions = await detectFaceMesh(video, faceMeshModel);
+          
+          // Clear canvas
+          context.clearRect(0, 0, canvas.width, canvas.height);
+
+          // Draw video frame on canvas
+          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+          // Draw face mesh points
+          drawFaceMesh(context, predictions);
+        }, 100);
+      } catch (error) {
+        console.error('Error accessing webcam:', error.message);
+      }
+    }
+
+    // Detect face mesh using TensorFlow.js model
+    async function detectFaceMesh(video, model) {
+      const tensor = tf.browser.fromPixels(video);
+      const resized = tf.image.resizeBilinear(tensor, [192, 192]).toFloat();
+      const offset = tf.scalar(127.5);
+      const normalized = resized.div(offset).sub(tf.scalar(1.0));
+      const input = normalized.transpose([2, 0, 1]).expandDims();
+      const predictions = await model.executeAsync(input);
+      return predictions;
+    }
+
+    // Draw face mesh points
+    function drawFaceMesh(context, predictions) {
+      const coords = predictions.arraySync();
+      const numKeyPoints = coords[0].length;
+
+      for (let i = 0; i < numKeyPoints; i++) {
+        const x = coords[0][i][0];
+        const y = coords[0][i][1];
+        context.beginPath();
+        context.arc(x, y, 2, 0, 2 * Math.PI);
+        context.fillStyle = 'red';
+        context.fill();
+      }
+    }
+
+    // Start the application
+    async function startApp() {
+      await startVideo();
+    }
+
+    // Run the application
+    startApp();
+  </script>
+</body>
+</html>
